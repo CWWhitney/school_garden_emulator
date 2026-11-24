@@ -1,9 +1,9 @@
 "input","evppi","share_of_evpi"
-"school_event_value",97.4,0.754
-"if_community_likes",17.8,0.138
-"school_event_freq",4.3,0.033
+"school_event_value",59.8,0.479
+"if_community_likes",31.9,0.255
+"school_event_freq",8.6,0.069
+"if_effective_manage",0,0
+"if_parents_like",0,0
+"school_event_mgmt_cost",0,0
 "value_of_non_garden_land_use",0,0
-"equipment_cost",0,0
-"annual_teacher_training",0,0
-"livestock_establishment_costs",0,0
-"if_family_pays_establishment",0,0
+"inflation_rate",0,0

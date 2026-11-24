@@ -5,7 +5,7 @@ This repository shows how to replace a slow Monte Carlo decision model with a fa
 ## What it does
 
 1. Runs the full model (84 uncertain inputs) and keeps the output `NPV_garden`, the net present value of a garden at a public school.
-2. Screens the inputs by rank correlation and keeps the 8 that matter most.
+2. Screens the inputs with Sobol total-effect indices (full model, pick-freeze, about 50,000 runs) and keeps the 8 that matter most.
 3. Fits a Gaussian process on 150 model runs.
 4. Tests it on 5,000 runs it has never seen.
 5. Draws 1 million emulated outcomes.
@@ -26,23 +26,22 @@ This repository shows how to replace a slow Monte Carlo decision model with a fa
 
 `evppi.R` uses the emulator to ask what is worth learning before the school decides. NPV_garden is the gain over doing nothing, so the garden is chosen when expected NPV is above zero (here 629, so build it).
 
-| Quantity | Value (seed 42) |
-|---|---|
-| EVPI (perfect knowledge of everything) | 129 per garden |
-| EVPPI `school_event_value` | 97 (75% of EVPI) |
-| EVPPI `if_community_likes` | 18 (14%) |
-| EVPPI `school_event_freq` | 4 (3%) |
-| EVPPI of the other five kept inputs | 0 |
+| Quantity | Emulator | Full model |
+|---|---|---|
+| EVPI (perfect knowledge of everything) | | 125 per garden |
+| EVPPI `school_event_value` | 60 (48% of EVPI) | 68 |
+| EVPPI `if_community_likes` | 32 (26%) | 43 |
+| EVPPI `school_event_freq` | 9 (7%) | 8 |
+| EVPPI of the other five kept inputs | 0 | not run |
 
-Costs are well enough known; what the garden earns from school events and whether the community likes it are what to research first. Results are in `evppi_results.csv` and `figures/evppi.png`.
+Sobol indices (`sobol_indices.csv`) show the same three inputs carry nearly all the variance: total effects 0.63, 0.28 and 0.19, with all other inputs at 0.014 or less. Total effects exceed first-order effects (0.54, 0.19, 0.11), so these inputs interact. Costs are well enough known; what the garden earns from school events and whether the community likes it are what to research first. Results are in `evppi_results.csv`, `evppi_check.csv` and `figures/evppi.png`.
 
-Limits: EVPPI is only computed for the 8 screened inputs, so inputs dropped by the screen count as zero. The nested estimate is not checked against the full model, and it is slightly biased upward by inner-loop sampling.
+Limits: the emulator EVPPI is 10 to 25% below the full-model value for the two largest inputs, and the estimates vary between emulator fits (an earlier fit gave 97 for `school_event_value`), so read them as an order of magnitude and a ranking. Both estimates use 150 outer by 1,000 inner draws and are slightly biased upward by inner-loop sampling. EVPPI was only computed for the 8 screened inputs; the Sobol screen says the rest are negligible.
 
 ## What it is not
 
 - The model here is fast already, so the speed gain is small (about 9 times). The gain grows with slower models, which is where emulators are useful.
 - The emulator is fitted to one output. Each output needs its own fit.
-- Screening by rank correlation can miss inputs that matter only through interactions. A variance-based screen is the next step.
 - Prediction intervals are slightly too narrow (92% instead of 95%).
 
 ## Run it
@@ -57,7 +56,7 @@ source("emulator.R")
 - `emulator.R`: the emulator workflow.
 - `evppi.R`: EVPI and EVPPI with the emulator.
 - `model_school_garden.R`, `functions/`, `data/inputs_school_garden.csv`: copies of the original model and inputs.
-- `figures/emulator_check.png`, `emulator_results.csv`: outputs.
+- `figures/`, `*.csv`: outputs. `evppi.R` takes about 20 minutes because it checks EVPPI against the full model.
 
 ## Citation
 

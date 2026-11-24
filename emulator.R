@@ -7,7 +7,7 @@ source("model_school_garden.R")   # defines school_garden_function
 target <- "NPV_garden"            # output to emulate (NPV of a garden at a public school)
 n_train <- 150                    # model runs used to fit the emulator
 n_test  <- 5000                   # held-out model runs used to check it
-n_screen <- 1000                  # runs used to pick the inputs that matter
+n_screen <- 0                     # no separate screening runs: the Sobol screen runs the model itself
 n_keep  <- 8                      # inputs kept in the emulator
 
 # 1. Run the full model ####
@@ -19,14 +19,44 @@ t_model <- system.time(mc <- run(n_screen + n_train + n_test))["elapsed"]
 X <- mc$x[, sapply(mc$x, function(z) length(unique(z)) > 1)]   # drop constants
 y <- mc$y[[target]]
 
-idx_screen <- 1:n_screen
 idx_train  <- n_screen + 1:n_train
 idx_test   <- n_screen + n_train + 1:n_test
 
-# 2. Screen: keep the inputs with the strongest rank correlation with the output ####
-rho  <- abs(cor(X[idx_screen, ], y[idx_screen], method = "spearman"))[, 1]
-keep <- names(sort(rho, decreasing = TRUE))[1:n_keep]
-print(round(sort(rho, decreasing = TRUE)[1:n_keep], 2))
+# 2. Screen with Sobol total-effect indices (variance based) ####
+# Run the full model on pick-freeze samples: A, B and A with column i taken from B (Saltelli 2010, Jansen 1999).
+# The model has internal randomness (vv, chance_event), so the noise variance is estimated from
+# repeat runs and subtracted from the total-effect index.
+Xfull <- mc$x
+set.seed(99)
+n_sobol <- 600                                      # base sample size; model runs = n_sobol * (k + 2)
+A <- Xfull[sample(nrow(Xfull), n_sobol), names(X)]
+B <- Xfull[sample(nrow(Xfull), n_sobol), names(X)]
+base <- Xfull[1, , drop = FALSE]
+run_rows <- function(M) {                           # run the full model on given input rows
+  out <- numeric(nrow(M))
+  for (r in seq_len(nrow(M))) {
+    v <- base; v[names(M)] <- M[r, ]
+    list2env(as.list(v), envir = globalenv())
+    out[r] <- school_garden_function()[[target]]
+  }
+  out
+}
+fA <- run_rows(A); fB <- run_rows(B); fA2 <- run_rows(A)
+V <- var(c(fA, fB))
+noise <- mean((fA - fA2)^2) / 2                     # variance from internal randomness
+ST <- S1 <- setNames(numeric(ncol(A)), names(A))
+for (i in names(A)) {
+  ABi <- A; ABi[[i]] <- B[[i]]
+  f <- run_rows(ABi)
+  ST[i] <- (mean((fA - f)^2) / 2 - noise) / V
+  S1[i] <- mean(fB * (f - fA)) / V
+}
+sobol <- data.frame(input = names(ST), S1 = round(S1, 3), ST = round(ST, 3))
+sobol <- sobol[order(-sobol$ST), ]
+write.csv(sobol, "sobol_indices.csv", row.names = FALSE)
+cat(sprintf("\nShare of output variance from internal randomness: %.2f\n", noise / V))
+keep <- sobol$input[1:n_keep]
+print(sobol[1:n_keep, ], row.names = FALSE)
 
 # 3. Fit the Gaussian process on the training runs ####
 fit <- km(~1, design = X[idx_train, keep, drop = FALSE], response = y[idx_train],
