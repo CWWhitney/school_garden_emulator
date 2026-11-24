@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "Emulators for contested decisions: the NIFAM school garden"
+title: "Gaussian-process emulator of a NIFAM school garden model"
 type: software
 authors:
   - family-names: Whitney

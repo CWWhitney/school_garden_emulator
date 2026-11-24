@@ -1,83 +1,70 @@
-# One Gaussian-process emulator per account of the school garden, then EVCA on the emulated draws.
+# Gaussian-process emulator of the NIFAM school garden decision model
 # Run from the repository root: source("emulator.R")
-# Each account keeps its own output and its own units. Nothing is converted into another account's currency.
 
-suppressMessages({library(decisionSupport); library(DiceKriging); library(evca)})
-source("model_school_garden.R")
+suppressMessages({library(decisionSupport); library(DiceKriging)})
+source("model_school_garden.R")   # defines school_garden_function
 
-# Accounts (columns) and options (rows) as model outputs. "none" is the do-nothing option, zero by construction.
-outputs <- list(
-  budget   = c(garden = "NPV_garden", stem = "NPV_garden_STEM"),   # school finances, currency
-  health   = c(garden = "health",     stem = "health_STEM"),       # child health value, currency
-  ecology  = c(garden = "biodiversity", stem = "biodiversity"))    # ecological value, model assumes it is the same
-n_run <- 4000; n_train <- 300; n_keep <- 8; n_draw <- 20000
+target <- "NPV_garden"            # output to emulate (NPV of a garden at a public school)
+n_train <- 150                    # model runs used to fit the emulator
+n_test  <- 5000                   # held-out model runs used to check it
+n_screen <- 1000                  # runs used to pick the inputs that matter
+n_keep  <- 8                      # inputs kept in the emulator
 
+# 1. Run the full model ####
 set.seed(42)
 inputs <- estimate_read_csv("data/inputs_school_garden.csv")
-mc <- mcSimulation(inputs, school_garden_function, numberOfModelRuns = n_run, functionSyntax = "plainNames")
-X <- mc$x[, sapply(mc$x, function(z) length(unique(z)) > 1)]
-tr <- seq_len(n_train); te <- (n_train + 1):n_run
+run <- function(n) mcSimulation(inputs, school_garden_function,
+                                numberOfModelRuns = n, functionSyntax = "plainNames")
+t_model <- system.time(mc <- run(n_screen + n_train + n_test))["elapsed"]
+X <- mc$x[, sapply(mc$x, function(z) length(unique(z)) > 1)]   # drop constants
+y <- mc$y[[target]]
 
-# 1. One emulator per model output, with its own screened inputs ####
-fit_gp <- function(out) {
-  y <- mc$y[[out]]
-  rho <- abs(cor(X[tr, ], y[tr], method = "spearman"))[, 1]
-  keep <- names(sort(rho, decreasing = TRUE, na.last = NA))[1:n_keep]
-  fit <- km(~1, design = X[tr, keep], response = y[tr], covtype = "matern5_2",
-            nugget.estim = TRUE, control = list(trace = FALSE))
-  r2 <- 1 - sum((predict(fit, X[te, keep], "UK", checkNames = FALSE)$mean - mc$y[[out]][te])^2) /
-            sum((mc$y[[out]][te] - mean(mc$y[[out]][te]))^2)
-  list(fit = fit, keep = keep, r2 = r2)
-}
-gps <- lapply(unique(unlist(outputs)), fit_gp); names(gps) <- unique(unlist(outputs))
-print(round(sapply(gps, `[[`, "r2"), 2))
+idx_screen <- 1:n_screen
+idx_train  <- n_screen + 1:n_train
+idx_test   <- n_screen + n_train + 1:n_test
 
-# 2. Payoff array: states x options x accounts, from emulated draws of the shared uncertain inputs ####
-draw_inputs <- function() as.data.frame(lapply(X, function(v) sample(v, n_draw, replace = TRUE)))
-D <- draw_inputs()
-emu <- function(out) predict(gps[[out]]$fit, D[, gps[[out]]$keep], "UK", checkNames = FALSE,
-                             light.return = TRUE)$mean
-opt <- c("none", "garden", "stem")
-make_array <- function(get) {
-  a <- array(0, c(n_draw, 3, length(outputs)), dimnames = list(NULL, opt, names(outputs)))
-  for (w in names(outputs)) for (o in c("garden", "stem")) a[, o, w] <- get(outputs[[w]][[o]])
-  a
-}
-A_emu <- make_array(emu)
-A_mod <- array(0, c(n_run, 3, length(outputs)), dimnames = list(NULL, opt, names(outputs)))
-for (w in names(outputs)) for (o in c("garden", "stem")) A_mod[, o, w] <- mc$y[[outputs[[w]][[o]]]]
+# 2. Screen: keep the inputs with the strongest rank correlation with the output ####
+rho  <- abs(cor(X[idx_screen, ], y[idx_screen], method = "spearman"))[, 1]
+keep <- names(sort(rho, decreasing = TRUE))[1:n_keep]
+print(round(sort(rho, decreasing = TRUE)[1:n_keep], 2))
 
-# 3. Per-account results in each account's own units ####
-report <- function(A, label) {
-  mu <- apply(A, c(2, 3), mean)
-  cat("\n", label, ": expected value of each option in each account's own units\n", sep = ""); print(round(mu, 1))
-  # Pareto step: drop an option if every account ranks another option at least as high and one strictly higher
-  dom <- sapply(opt, function(i) any(sapply(setdiff(opt, i), function(j)
-    all(mu[j, ] >= mu[i, ]) && any(mu[j, ] > mu[i, ]))))
-  cat("Dominated in every account:", if (any(dom)) names(dom)[dom] else "none", "\n")
-  keep <- names(dom)[!dom]
-  # range share: 0 = the account's own best option, 1 = its own worst. A convention, not a measurement.
-  rng <- apply(mu[keep, , drop = FALSE], 2, function(v) diff(range(v)))
-  share <- sweep(sweep(mu[keep, , drop = FALSE], 2, apply(mu[keep, , drop = FALSE], 2, max), "-"), 2,
-                 ifelse(rng > 0, rng, 1), "/") * -1
-  cat("Loss as a share of each account's own range (0 = its best):\n"); print(round(share, 2))
-  invisible(list(mu = mu, keep = keep))
-}
-r_mod <- report(A_mod, "Full model"); r_emu <- report(A_emu, "Emulator")
+# 3. Fit the Gaussian process on the training runs ####
+fit <- km(~1, design = X[idx_train, keep, drop = FALSE], response = y[idx_train],
+          covtype = "matern5_2", nugget.estim = TRUE, control = list(trace = FALSE))
 
-# 4. EVCA on the contested options, equal standing as a declared convention ####
-contested <- function(A, keep) {
-  A <- A[, keep, , drop = FALSE]
-  mu <- apply(A, c(2, 3), mean)
-  list(A = A, smin = apply(mu, 2, min), srng = pmax(apply(mu, 2, function(v) diff(range(v))), 1e-9))
-}
-for (nm in c("Full model", "Emulator")) {
-  r <- if (nm == "Full model") r_mod else r_emu
-  A <- if (nm == "Full model") A_mod else A_emu
-  if (length(r$keep) < 2) { cat("\n", nm, ": one option survives the Pareto step, so there is nothing to negotiate.\n", sep = ""); next }
-  cc <- contested(A, r$keep)
-  w <- rep(1 / dim(cc$A)[3], dim(cc$A)[3])
-  d <- evca_decompose(cc$A, model_weights = w, scale_min = cc$smin, scale_range = cc$srng)
-  cat(sprintf("\n%s: EVCA with equal standing = %.3f (evidence-reducible %.3f, remaining %.3f) on the 0-1 range-share scale\n",
-              nm, d$gap, d$evpi_agg, d$evca_post))
-}
+# 4. Check it on runs it has never seen ####
+pred <- predict(fit, newdata = X[idx_test, keep, drop = FALSE], type = "UK")
+obs  <- y[idx_test]
+rmse <- sqrt(mean((pred$mean - obs)^2))
+r2   <- 1 - sum((pred$mean - obs)^2) / sum((obs - mean(obs))^2)
+cover <- mean(obs >= pred$lower95 & obs <= pred$upper95)
+p_pos <- c(model = mean(obs > 0), emulator = mean(pred$mean > 0))
+cat(sprintf("\nHeld-out runs: %d\nR2 = %.2f   RMSE = %.0f   (output SD = %.0f)\n",
+            n_test, r2, rmse, sd(obs)))
+cat(sprintf("95%% prediction interval covers %.0f%% of held-out runs\n", 100 * cover))
+cat(sprintf("Chance NPV > 0: model %.3f, emulator %.3f\n", p_pos[1], p_pos[2]))
+
+# 5. Use it: 1 million draws from the emulator ####
+set.seed(7)
+big <- as.data.frame(lapply(X[, keep, drop = FALSE], function(v) sample(v, 1e6, replace = TRUE)))
+t_emul <- system.time(big_pred <- predict(fit, newdata = big, type = "UK", checkNames = FALSE,
+                                          light.return = TRUE)$mean)["elapsed"]
+t_model_1e6 <- unname(t_model) / (n_screen + n_train + n_test) * 1e6
+cat(sprintf("\n1e6 runs: model about %.0f s, emulator %.0f s\n", t_model_1e6, t_emul))
+
+# 6. Figures ####
+dir.create("figures", showWarnings = FALSE)
+png("figures/emulator_check.png", 1400, 600, res = 150)
+par(mfrow = c(1, 2), mar = c(4.5, 4.5, 3, 1))
+plot(obs, pred$mean, pch = 16, cex = 0.4, col = "#00000044",
+     xlab = "Full model NPV", ylab = "Emulator NPV",
+     main = sprintf("Held-out runs (R2 = %.2f)", r2))
+abline(0, 1, col = "red", lwd = 2)
+plot(density(obs), lwd = 2, main = "NPV distribution", xlab = "NPV")
+lines(density(big_pred), lwd = 2, col = "red")
+legend("topright", c("Full model", "Emulator (1e6 draws)"), lwd = 2, col = c("black", "red"), bty = "n")
+dev.off()
+
+write.csv(data.frame(metric = c("R2", "RMSE", "coverage95", "n_train", "n_test"),
+                     value = c(r2, rmse, cover, n_train, n_test)),
+          "emulator_results.csv", row.names = FALSE)
