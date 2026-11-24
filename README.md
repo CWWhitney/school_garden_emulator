@@ -22,6 +22,22 @@ This repository shows how to replace a slow Monte Carlo decision model with a fa
 
 ![Emulator check](figures/emulator_check.png)
 
+## Value of information for the garden decision
+
+`evppi.R` uses the emulator to ask what is worth learning before the school decides. NPV_garden is the gain over doing nothing, so the garden is chosen when expected NPV is above zero (here 629, so build it).
+
+| Quantity | Value (seed 42) |
+|---|---|
+| EVPI (perfect knowledge of everything) | 129 per garden |
+| EVPPI `school_event_value` | 97 (75% of EVPI) |
+| EVPPI `if_community_likes` | 18 (14%) |
+| EVPPI `school_event_freq` | 4 (3%) |
+| EVPPI of the other five kept inputs | 0 |
+
+Costs are well enough known; what the garden earns from school events and whether the community likes it are what to research first. Results are in `evppi_results.csv` and `figures/evppi.png`.
+
+Limits: EVPPI is only computed for the 8 screened inputs, so inputs dropped by the screen count as zero. The nested estimate is not checked against the full model, and it is slightly biased upward by inner-loop sampling.
+
 ## What it is not
 
 - The model here is fast already, so the speed gain is small (about 9 times). The gain grows with slower models, which is where emulators are useful.
@@ -38,7 +54,8 @@ source("emulator.R")
 
 ## Files
 
-- `emulator.R`: the whole workflow.
+- `emulator.R`: the emulator workflow.
+- `evppi.R`: EVPI and EVPPI with the emulator.
 - `model_school_garden.R`, `functions/`, `data/inputs_school_garden.csv`: copies of the original model and inputs.
 - `figures/emulator_check.png`, `emulator_results.csv`: outputs.
 
