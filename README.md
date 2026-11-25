@@ -1,56 +1,67 @@
 # Which uncertainties matter for a school garden decision?
 
-A school in Vietnam must decide whether to build a garden. The decision model from [nifam_codas_school_garden](https://github.com/CWWhitney/nifam_codas_school_garden) has 84 uncertain inputs and one output, `NPV_garden`: the net present value (NPV) of the garden over 5 years, in million Vietnamese dong (VND), compared with doing nothing. The school builds the garden if expected NPV is above zero.
+A school in Vietnam must decide whether to build a garden, and if so, which kind. The decision model from [nifam_codas_school_garden](https://github.com/CWWhitney/nifam_codas_school_garden) has 84 uncertain inputs. For each school it gives the net present value (NPV) over 5 years, in million Vietnamese dong (VND), of two garden options compared with doing nothing: a passive education garden and a STEM education garden. It does this for two school types: one without the extra public-school risk, and a public school, where unsuitable land or bureaucratic barriers can stop the garden. That gives four outputs: `NPV_garden`, `NPV_garden_STEM`, `NPV_garden_public_school` and `NPV_garden_STEM_public_school`. The school picks the option with the highest expected NPV, or does nothing if none is above zero.
 
-This repository answers two questions. Which inputs drive the result? And which are worth researching before the school commits? To make the second question cheap to answer, it replaces the model with an emulator: a fast statistical model fitted to a few hundred model runs. The emulator is a Gaussian process fitted with the R package `DiceKriging`.
+This repository answers two questions. Which inputs drive each result? And which are worth researching before the school commits? To make the second question cheap to answer, it replaces the model with emulators: fast statistical models (Gaussian processes, fitted with the R package `DiceKriging`) trained on 800 model runs, one per output.
 
 ## Result: what to research before deciding
 
-Expected NPV is 637 million VND, so the garden is the better choice today. Even so, NPV is below zero in 36% of model runs, and a school that knew it was in one of those cases would not build. The expected value of perfect information (EVPI) measures what that knowledge is worth. Worked example: replacing every negative NPV with zero (the outcome if the school could avoid every loss) and averaging gives 762. Subtracting today's expected NPV of 637 gives an EVPI of 125 million VND per garden. Both averages are calculated from the full model.
+Expected NPV today, in million VND:
 
-The expected value of partial perfect information (EVPPI) gives the same figure for one input at a time: what the school would gain by learning that input exactly before deciding.
-
-| Input | Meaning | Total Sobol index | EVPPI from emulator (million VND) | EVPPI from full model (million VND) |
+| School type | Do nothing | Passive garden | STEM garden | Best choice today |
 |---|---|---|---|---|
-| `school_event_value` | Value of garden events (million VND per event) | 0.63 | 60 | 68 |
-| `if_community_likes` | Chance of community support | 0.28 | 32 | 43 |
-| `school_event_freq` | Events per year | 0.19 | 9 | 8 |
-| Each of the other 81 inputs | Costs, prices, rates and others | 0.014 or less | 0 for the five tested | not run |
+| Without public-school risk | 0 | 609 | 262 | Passive garden |
+| Public school | 0 | 233 | -111 | Passive garden |
 
-The total Sobol index is the share of output variance that an input causes, alone and through interactions with other inputs. The three inputs above carry nearly all of it. Their total indices exceed their first-order indices (0.54, 0.19 and 0.11, which count each input alone), so they interact. A screen by rank correlation can miss such inputs; this screen does not. The school should therefore find out what garden events are worth and whether the community supports them before it spends effort on better cost estimates.
+The expected value of perfect information (EVPI) is what a school would gain by learning every input exactly before choosing. Worked example for the school without public-school risk: in each model run, pick the best of the three options and average the results, which gives 749. Subtract today's best expected NPV of 609 to get an EVPI of 140 million VND. The same calculation for the public school gives 428 - 233 = 195. EVPI is larger for the public school because its choice is less certain.
 
-EVPPI was computed for the 8 inputs with the highest total Sobol index. Each of the other 76 has a total index of 0.002 or less, so its EVPPI is expected to be negligible.
+The expected value of partial perfect information (EVPPI) gives the same figure for one input at a time: what the school would gain by learning that input exactly before choosing. The table shows the full-model value (nested Monte Carlo on the real model) next to the emulator value.
+
+| Input | Meaning | EVPPI, no public-school risk: full model, emulator | EVPPI, public school: full model, emulator |
+|---|---|---|---|
+| `school_event_value` | Value of garden events (million VND per event) | 89, 78 | 111, 96 |
+| `if_community_likes` | Chance of community support | 39, 32 | 63, 53 |
+| `school_event_freq` | Events per year | 17, 16 | 35, 30 |
+| Seven other kept inputs | Training, tools, canteen and others | not run, 0 | not run, 0 |
+
+The three inputs above carry 56%, 23% and 11% of EVPI for the school without public-school risk, and 49%, 27% and 15% for the public school (emulator values). The school should therefore find out what garden events are worth and whether the community supports them before it spends effort on better cost estimates. This holds for both school types.
+
+Sobol total indices (the share of output variance an input causes, alone and through interactions) agree for the two passive and STEM outputs without public-school risk: 0.65 and 0.55 for `school_event_value`, 0.28 and 0.21 for `if_community_likes`, 0.18 and 0.15 for `school_event_freq`. For the public-school outputs the same inputs matter, but the indices are small (0.18 to 0.23 for `school_event_value`), because most of the variance there is internal model randomness, which no input explains.
 
 ![EVPPI of the kept inputs](figures/evppi.png)
 
-## Result: how well the emulator reproduces the model
+## Result: how well the emulators reproduce the model
 
-The emulator was fitted to 150 model runs on the 8 inputs and tested on 5,000 runs it had never seen (seed 42).
+The emulators use the 10 inputs that rank in the top 5 by total Sobol index for any output. They were tested on 5,000 model runs they had never seen (seed 42).
 
-| Check | Value |
-|---|---|
-| R² on test runs (1 is perfect) | 0.95 |
-| Root mean square error (the output standard deviation is 1,144) | 247 |
-| Share of test runs inside the emulator's 95% prediction interval | 96% |
-| Chance that NPV is above zero, from the model and from the emulator | 0.642 and 0.641 |
-| Time for 1 million draws, emulator and model (model time extrapolated) | 22 s and 235 s |
+| Output | R² on test runs (1 is perfect) | Root mean square error | Output standard deviation | Test runs inside the 95% interval | Chance NPV > 0, model | Chance NPV > 0, emulator |
+|---|---|---|---|---|---|---|
+| `NPV_garden` | 0.97 | 211 | 1,145 | 96% | 0.63 | 0.62 |
+| `NPV_garden_STEM` | 0.85 | 492 | 1,260 | 96% | 0.51 | 0.48 |
+| `NPV_garden_public_school` | 0.45 | 725 | 973 | 92% | 0.37 | 0.50 |
+| `NPV_garden_STEM_public_school` | 0.53 | 672 | 984 | 94% | 0.25 | 0.34 |
+
+The model has random draws inside it, so even a perfect emulator cannot reach R² of 1. Internal randomness is 1% of output variance for `NPV_garden`, 10% for `NPV_garden_STEM`, 34% for the public-school option and 31% for the public-school STEM option. The best possible R² for the two public-school outputs is therefore about 0.66 to 0.69. The emulator estimates the conditional mean, which is what EVPPI needs, but it overstates the chance of a positive NPV for those two outputs.
 
 ![Emulator check](figures/emulator_check.png)
 
+Time for 1 million draws of one output: 182 s for the emulator and 293 s for the model.
+
 ## Limits and next steps
 
-- For the two largest inputs, the emulator EVPPI is 12% and 26% below the full-model value. Use the ranking and the order of magnitude, not the exact figures. The next step is to refit with more training runs and report the EVPPI spread across seeds.
+- The emulator EVPPI is 10% to 20% below the full-model value for the two largest inputs, and about 5% to 15% for the third. Use the ranking and the order of magnitude, not the exact figures. The next step is to refit with more training runs and report the EVPPI spread across seeds.
+- The public-school emulators fit poorly (R² 0.45 and 0.53 against a ceiling near 0.67). A next step is to model the barrier event separately from the NPV given no barrier.
 - Both EVPPI estimates use 150 values of the input and 1,000 draws of the other inputs per value. This nested sampling biases EVPPI slightly upward.
-- The full model takes about 0.2 milliseconds per run, so the emulator saves only about 10 times the compute here. An emulator pays off for slower models, such as spatial or multi-year versions of this one.
-- The emulator fits one output. Another output needs its own fit.
-- The Sobol screen runs the full model about 52,000 times. For a slow model it would have to run on a cheaper surrogate.
+- EVPPI was computed for the 10 kept inputs. The other 74 have small total Sobol indices, so their EVPPI is expected to be negligible, but it was not run.
+- The full model takes about 0.3 milliseconds per run, so the emulator saves little compute here. An emulator pays off for slower models, such as spatial or multi-year versions of this one.
+- NPV units are assumed to be million VND, because the inputs are.
 
 ## Run it
 
 ```r
 install.packages(c("decisionSupport", "DiceKriging"))
-source("emulator.R")   # Sobol screen, fit and test (about 1 minute)
-source("evppi.R")      # EVPI and EVPPI with a full-model check (about 20 minutes)
+source("emulator.R")   # Sobol screen, fit and test (about 15 minutes)
+source("evppi.R")      # EVPI and EVPPI with a full-model check (about 1.5 hours)
 ```
 
 ## Files

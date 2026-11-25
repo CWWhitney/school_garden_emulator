@@ -1,9 +1,21 @@
-"input","evppi","share_of_evpi"
-"school_event_value",59.8,0.479
-"if_community_likes",31.9,0.255
-"school_event_freq",8.6,0.069
-"if_effective_manage",0,0
-"if_parents_like",0,0
-"school_event_mgmt_cost",0,0
-"value_of_non_garden_land_use",0,0
-"inflation_rate",0,0
+"input","school_type","evppi","share_of_evpi"
+"school_event_value","no public-school risk",78,0.556
+"if_community_likes","no public-school risk",31.6,0.225
+"school_event_freq","no public-school risk",15.6,0.111
+"if_parents_like","no public-school risk",0,0
+"if_effective_manage","no public-school risk",0,0
+"annual_teacher_training","no public-school risk",0,0
+"teaching_tools","no public-school risk",0,0
+"if_school_has_canteen","no public-school risk",0,0
+"fallow_eco_reduction","no public-school risk",0,0
+"green_space_eco_value","no public-school risk",0,0
+"school_event_value","public school",96.2,0.494
+"if_community_likes","public school",52.6,0.27
+"school_event_freq","public school",29.5,0.151
+"if_parents_like","public school",0,0
+"if_effective_manage","public school",0,0
+"annual_teacher_training","public school",0,0
+"teaching_tools","public school",0,0
+"if_school_has_canteen","public school",0,0
+"fallow_eco_reduction","public school",0,0
+"green_space_eco_value","public school",0,0

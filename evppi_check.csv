@@ -1,4 +1,7 @@
-"input","evppi_emulator","evppi_full_model"
-"school_event_value",59.8,67.8
-"if_community_likes",31.9,42.7
-"school_event_freq",8.6,8.3
+"input","school_type","evppi_full_model","evppi_emulator"
+"school_event_value","no public-school risk",89.4,78
+"if_community_likes","no public-school risk",38.8,31.6
+"school_event_freq","no public-school risk",17,15.6
+"school_event_value","public school",110.7,96.2
+"if_community_likes","public school",63.4,52.6
+"school_event_freq","public school",34.6,29.5
